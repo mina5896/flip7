@@ -3,13 +3,17 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
+    "dev": "next dev --turbopack & npx partykit dev --port 1999",
+    "dev:next": "next dev --turbopack",
+    "dev:party": "npx partykit dev --port 1999",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "deploy:party": "npx partykit deploy"
   },
   "dependencies": {
     "next": "16.1.6",
+    "partysocket": "^1.1.15",
     "react": "19.2.3",
     "react-dom": "19.2.3"
   },
@@ -21,6 +25,7 @@
     "babel-plugin-react-compiler": "1.0.0",
     "eslint": "^9",
     "eslint-config-next": "16.1.6",
+    "partykit": "^0.0.115",
     "tailwindcss": "^4",
     "typescript": "^5"
   }
