@@ -57,7 +57,7 @@ function getNextActivePlayerIndex(state: GameState, fromIndex: number): number {
       return idx;
     }
   }
-  return -1; // No active players
+  return -1;
 }
 
 function isRoundOver(state: GameState): boolean {
@@ -66,50 +66,83 @@ function isRoundOver(state: GameState): boolean {
 
 function drawCard(state: GameState): Card {
   if (state.deck.length === 0) {
-    // Reshuffle discard pile into deck
     state.deck = shuffleDeck(state.discard);
     state.discard = [];
   }
   return state.deck.pop()!;
 }
 
-function processCard(state: GameState, playerIndex: number, card: Card): { busted: boolean; flip7: boolean } {
+function processCard(state: GameState, playerIndex: number, card: Card, fromFlipThree = false): { busted: boolean; flip7: boolean; savedBySecondChance: boolean } {
   const player = state.players[playerIndex];
 
   if (card.type === "number") {
-    // Check for duplicate → bust
     if (hasNumberDuplicate(player, card)) {
+      // Second Chance saves from bust
+      if (player.hasSecondChance) {
+        player.hasSecondChance = false;
+        const scCards = player.cards.filter((c) => c.type === "second_chance");
+        player.cards = player.cards.filter((c) => c.type !== "second_chance");
+        state.discard.push(card, ...scCards);
+        if (!fromFlipThree) {
+          // Normal draw: saved but you stay
+          player.stayed = true;
+        }
+        player.roundScore = calculateRoundScore(player);
+        state.lastAction = `${player.name} drew a duplicate ${card.value} but Second Chance saved them!`;
+        return { busted: false, flip7: false, savedBySecondChance: true };
+      }
       player.busted = true;
       player.roundScore = 0;
       player.cards.push(card);
       state.lastAction = `${player.name} drew a duplicate ${card.value} and busted!`;
-      return { busted: true, flip7: false };
+      return { busted: true, flip7: false, savedBySecondChance: false };
     }
 
     player.cards.push(card);
     player.roundScore = calculateRoundScore(player);
 
-    // Check for Flip 7
     if (getUniqueNumberCount(player) >= 7) {
       player.stayed = true;
       state.lastAction = `${player.name} achieved FLIP 7! Round ends!`;
-      return { busted: false, flip7: true };
+      return { busted: false, flip7: true, savedBySecondChance: false };
     }
 
     state.lastAction = `${player.name} drew a ${card.value}`;
-    return { busted: false, flip7: false };
+    return { busted: false, flip7: false, savedBySecondChance: false };
   }
 
-  // Action cards (freeze, flip_three, second_chance) — just add to hand, players handle effects themselves
-  // Modifier and multiplier cards — add to hand and update score
+  if (card.type === "second_chance") {
+    player.cards.push(card);
+    if (!player.hasSecondChance) {
+      player.hasSecondChance = true;
+      state.lastAction = `${player.name} drew Second Chance!`;
+    } else {
+      state.lastAction = `${player.name} drew another Second Chance (already has one)`;
+    }
+    return { busted: false, flip7: false, savedBySecondChance: false };
+  }
+
+  // All other cards (freeze, flip_three, modifier, multiplier) — add to hand
   player.cards.push(card);
   player.roundScore = calculateRoundScore(player);
   state.lastAction = `${player.name} drew ${card.label}`;
-  return { busted: false, flip7: false };
+  return { busted: false, flip7: false, savedBySecondChance: false };
+}
+
+function advanceTurn(state: GameState) {
+  if (isRoundOver(state)) {
+    endRound(state);
+  } else {
+    const next = getNextActivePlayerIndex(state, state.currentPlayerIndex);
+    if (next === -1) {
+      endRound(state);
+    } else {
+      state.currentPlayerIndex = next;
+    }
+  }
 }
 
 function endRound(state: GameState) {
-  // Finalize scores
   for (const player of state.players) {
     if (!player.busted) {
       player.roundScore = calculateRoundScore(player);
@@ -117,7 +150,6 @@ function endRound(state: GameState) {
     }
   }
 
-  // Check for game over
   const playersOver200 = state.players.filter((p) => p.score >= state.targetScore);
   if (playersOver200.length > 0) {
     const maxScore = Math.max(...state.players.map((p) => p.score));
@@ -128,7 +160,6 @@ function endRound(state: GameState) {
       state.lastAction = `${winners[0].name} wins with ${winners[0].score} points!`;
       return;
     }
-    // Tie at 200+ - continue playing
   }
 
   state.phase = "round_end";
@@ -138,29 +169,23 @@ function endRound(state: GameState) {
 function startNewRound(state: GameState) {
   state.roundNumber++;
   state.phase = "playing";
-  // On first round, create and shuffle the deck
+
   if (state.roundNumber === 1) {
     state.deck = shuffleDeck(createDeck());
     state.discard = [];
   }
 
-  // Discard all player cards from previous round
   for (const player of state.players) {
     state.discard.push(...player.cards);
     player.cards = [];
     player.roundScore = 0;
     player.busted = false;
     player.stayed = false;
-  }
-
-  // Deal first card to each player
-  for (const player of state.players) {
-    const card = drawCard(state);
-    processCard(state, state.players.indexOf(player), card);
+    player.hasSecondChance = false;
   }
 
   state.currentPlayerIndex = 0;
-  state.lastAction = `Round ${state.roundNumber} started! Each player got their first card.`;
+  state.lastAction = `Round ${state.roundNumber} started!`;
 }
 
 export default class Flip7Server implements Party.Server {
@@ -171,7 +196,6 @@ export default class Flip7Server implements Party.Server {
   }
 
   onConnect(conn: Party.Connection) {
-    // Send current state to the connecting player
     this.send(conn, { type: "state", state: this.state });
   }
 
@@ -204,6 +228,12 @@ export default class Flip7Server implements Party.Server {
       case "stay":
         this.handleStay(sender);
         break;
+      case "use_flip_three":
+        this.handleFlipThree(sender);
+        break;
+      case "use_freeze":
+        this.handleFreeze(sender);
+        break;
       case "new_round":
         this.handleNewRound(sender);
         break;
@@ -215,7 +245,6 @@ export default class Flip7Server implements Party.Server {
 
   handleJoin(conn: Party.Connection, name: string) {
     if (this.state.phase !== "lobby") {
-      // Allow reconnection during game
       const existing = this.state.players.find((p) => p.name === name);
       if (existing) {
         existing.id = conn.id;
@@ -244,6 +273,7 @@ export default class Flip7Server implements Party.Server {
       roundScore: 0,
       busted: false,
       stayed: false,
+      hasSecondChance: false,
       connected: true,
     });
 
@@ -268,16 +298,18 @@ export default class Flip7Server implements Party.Server {
   handleHit(conn: Party.Connection) {
     if (this.state.phase !== "playing") return;
 
-    const playerIndex = this.state.players.findIndex((p) => p.id === conn.id);
-    if (playerIndex === -1) return;
-    const player = this.state.players[playerIndex];
-    if (player.busted || player.stayed) return;
+    // Only current turn player can HIT
+    const currentPlayer = this.state.players[this.state.currentPlayerIndex];
+    if (conn.id !== currentPlayer.id) {
+      this.send(conn, { type: "error", message: "Not your turn" });
+      return;
+    }
+    if (currentPlayer.busted || currentPlayer.stayed) return;
 
     const card = drawCard(this.state);
-    const result = processCard(this.state, playerIndex, card);
+    const result = processCard(this.state, this.state.currentPlayerIndex, card);
 
     if (result.flip7) {
-      // Round ends immediately - all non-busted players who haven't stayed get to keep their cards
       for (const p of this.state.players) {
         if (!p.busted && !p.stayed) {
           p.stayed = true;
@@ -289,22 +321,69 @@ export default class Flip7Server implements Party.Server {
       return;
     }
 
+    advanceTurn(this.state);
+    this.broadcastState();
+  }
+
+  handleStay(conn: Party.Connection) {
+    if (this.state.phase !== "playing") return;
+
+    // Only current turn player can STAY
+    const currentPlayer = this.state.players[this.state.currentPlayerIndex];
+    if (conn.id !== currentPlayer.id) {
+      this.send(conn, { type: "error", message: "Not your turn" });
+      return;
+    }
+    if (currentPlayer.busted || currentPlayer.stayed) return;
+
+    currentPlayer.stayed = true;
+    currentPlayer.roundScore = calculateRoundScore(currentPlayer);
+    this.state.lastAction = `${currentPlayer.name} stayed with ${currentPlayer.roundScore} points`;
+
+    advanceTurn(this.state);
+    this.broadcastState();
+  }
+
+  // Flip 3: any active player can use — draws 3 cards (or until bust). Doesn't change turn.
+  handleFlipThree(conn: Party.Connection) {
+    if (this.state.phase !== "playing") return;
+
+    const playerIndex = this.state.players.findIndex((p) => p.id === conn.id);
+    if (playerIndex === -1) return;
+    const player = this.state.players[playerIndex];
+    if (player.busted || player.stayed) return;
+
+    this.state.lastAction = `${player.name} is flipping 3!`;
+
+    for (let i = 0; i < 3; i++) {
+      const card = drawCard(this.state);
+      const result = processCard(this.state, playerIndex, card, true);
+
+      if (result.flip7) {
+        for (const p of this.state.players) {
+          if (!p.busted && !p.stayed) {
+            p.stayed = true;
+            p.roundScore = calculateRoundScore(p);
+          }
+        }
+        endRound(this.state);
+        this.broadcastState();
+        return;
+      }
+
+      // Stop only if actually busted (Second Chance saves let you keep flipping)
+      if (result.busted || player.busted) break;
+    }
+
     if (isRoundOver(this.state)) {
       endRound(this.state);
-    } else {
-      // Move to next player
-      const next = getNextActivePlayerIndex(this.state, this.state.currentPlayerIndex);
-      if (next === -1) {
-        endRound(this.state);
-      } else {
-        this.state.currentPlayerIndex = next;
-      }
     }
 
     this.broadcastState();
   }
 
-  handleStay(conn: Party.Connection) {
+  // Freeze: any active player can use — they stay immediately. Doesn't change turn.
+  handleFreeze(conn: Party.Connection) {
     if (this.state.phase !== "playing") return;
 
     const player = this.state.players.find((p) => p.id === conn.id);
@@ -312,17 +391,14 @@ export default class Flip7Server implements Party.Server {
 
     player.stayed = true;
     player.roundScore = calculateRoundScore(player);
-    this.state.lastAction = `${player.name} stayed with ${player.roundScore} points`;
+    this.state.lastAction = `${player.name} was frozen! They stay with ${player.roundScore} points.`;
 
-    if (isRoundOver(this.state)) {
+    // If the frozen player was the current turn player, advance turn
+    const currentPlayer = this.state.players[this.state.currentPlayerIndex];
+    if (currentPlayer.id === player.id) {
+      advanceTurn(this.state);
+    } else if (isRoundOver(this.state)) {
       endRound(this.state);
-    } else {
-      const next = getNextActivePlayerIndex(this.state, this.state.currentPlayerIndex);
-      if (next === -1) {
-        endRound(this.state);
-      } else {
-        this.state.currentPlayerIndex = next;
-      }
     }
 
     this.broadcastState();
@@ -347,6 +423,7 @@ export default class Flip7Server implements Party.Server {
       roundScore: 0,
       busted: false,
       stayed: false,
+      hasSecondChance: false,
     }));
     const hostId = this.state.hostId;
     this.state = createInitialState(hostId);

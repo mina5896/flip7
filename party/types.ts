@@ -17,6 +17,7 @@ export interface Player {
   roundScore: number;
   busted: boolean;
   stayed: boolean;
+  hasSecondChance: boolean;
   connected: boolean;
 }
 
@@ -41,6 +42,8 @@ export type ClientMessage =
   | { type: "start_game" }
   | { type: "hit" }
   | { type: "stay" }
+  | { type: "use_flip_three" } // draw 3 cards for yourself (someone played Flip 3 on you)
+  | { type: "use_freeze" } // freeze/stay yourself (someone played Freeze on you)
   | { type: "new_round" }
   | { type: "restart" };
 
