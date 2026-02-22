@@ -26,11 +26,10 @@ export function createDeck(): Card[] {
     cards.push(makeCard("second_chance", 0, "2nd Chance"));
   }
 
-  // Modifier cards: +2, +4, +6, +8, +8, +10 (6 cards)
+  // Modifier cards: +2, +4, +6, +8, +10 (1 each = 5 cards)
   cards.push(makeCard("modifier", 2, "+2"));
   cards.push(makeCard("modifier", 4, "+4"));
   cards.push(makeCard("modifier", 6, "+6"));
-  cards.push(makeCard("modifier", 8, "+8"));
   cards.push(makeCard("modifier", 8, "+8"));
   cards.push(makeCard("modifier", 10, "+10"));
 

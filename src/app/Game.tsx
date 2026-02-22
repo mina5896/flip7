@@ -43,7 +43,7 @@ function PlayerPanel({
 }) {
   const borderColor = player.busted
     ? "border-red-500/50"
-    : player.stayed || player.frozen
+    : player.stayed
       ? "border-slate-600"
       : isCurrentTurn
         ? "border-blue-500 pulse-glow"
@@ -66,10 +66,8 @@ function PlayerPanel({
           )}
         </div>
         <div className="flex items-center gap-3 text-sm">
-          {player.hasSecondChance && <span className="text-green-400" title="Has Second Chance">&#x1f6e1;</span>}
-          {player.frozen && <span className="text-cyan-400 text-xs">FROZEN</span>}
           {player.busted && <span className="text-red-400 text-xs font-bold">BUST</span>}
-          {player.stayed && !player.frozen && !player.busted && (
+          {player.stayed && !player.busted && (
             <span className="text-yellow-400 text-xs">STAYED</span>
           )}
           {gamePhase === "playing" && !player.busted && (
@@ -98,7 +96,6 @@ function PlayerPanel({
 export default function Game({ roomId, playerName }: { roomId: string; playerName: string }) {
   const [state, setState] = useState<GameState | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [targetMode, setTargetMode] = useState<{ cardType: "freeze" | "flip_three" } | null>(null);
   const socketRef = useRef<PartySocket | null>(null);
   const [copied, setCopied] = useState(false);
 
@@ -112,11 +109,6 @@ export default function Game({ roomId, playerName }: { roomId: string; playerNam
       room: roomId,
     });
 
-    socket.addEventListener("open", () => {
-      send({ type: "join", name: playerName });
-    });
-
-    // Need to also send on the raw socket since `send` via ref may not be set yet
     const joinOnOpen = () => {
       socket.send(JSON.stringify({ type: "join", name: playerName }));
     };
@@ -130,8 +122,6 @@ export default function Game({ roomId, playerName }: { roomId: string; playerNam
       } else if (msg.type === "error") {
         setError(msg.message);
         setTimeout(() => setError(null), 3000);
-      } else if (msg.type === "choose_target") {
-        setTargetMode({ cardType: msg.cardType });
       }
     });
 
@@ -159,11 +149,7 @@ export default function Game({ roomId, playerName }: { roomId: string; playerNam
 
   const me = state.players.find((p) => p.name === playerName);
   const isHost = me?.id === state.hostId;
-  const isMyTurn =
-    state.phase === "playing" &&
-    me &&
-    state.players[state.currentPlayerIndex]?.id === me.id;
-  const canAct = isMyTurn && !me!.busted && !me!.stayed && !me!.frozen;
+  const canAct = state.phase === "playing" && me && !me.busted && !me.stayed;
 
   return (
     <div className="min-h-screen p-4 max-w-4xl mx-auto">
@@ -262,31 +248,6 @@ export default function Game({ roomId, playerName }: { roomId: string; playerNam
             </div>
           </div>
 
-          {/* Target selection overlay */}
-          {targetMode && state.phase === "playing" && canAct && (
-            <div className="bg-orange-900/30 border border-orange-500/50 rounded-xl p-4 text-center space-y-3">
-              <p className="text-orange-300 font-semibold">
-                Choose a player to {targetMode.cardType === "freeze" ? "freeze" : "force to draw 3 cards"}:
-              </p>
-              <div className="flex flex-wrap justify-center gap-2">
-                {state.players
-                  .filter((p) => p.name !== playerName && !p.busted && !p.stayed && !p.frozen)
-                  .map((p) => (
-                    <button
-                      key={p.id}
-                      onClick={() => {
-                        send({ type: "choose_target", targetId: p.id });
-                        setTargetMode(null);
-                      }}
-                      className="px-4 py-2 bg-orange-600 hover:bg-orange-500 rounded-xl text-white font-medium transition-colors cursor-pointer"
-                    >
-                      {p.name}
-                    </button>
-                  ))}
-              </div>
-            </div>
-          )}
-
           {/* Player panels */}
           <div className="space-y-3">
             {/* Show "you" first */}
@@ -314,7 +275,7 @@ export default function Game({ roomId, playerName }: { roomId: string; playerNam
           {/* Action buttons */}
           {state.phase === "playing" && (
             <div className="flex justify-center gap-4 pt-2">
-              {canAct && !targetMode ? (
+              {canAct ? (
                 <>
                   <button
                     onClick={() => send({ type: "hit" })}
@@ -333,11 +294,9 @@ export default function Game({ roomId, playerName }: { roomId: string; playerNam
                 <div className="text-slate-500 text-sm py-4">
                   {me?.busted
                     ? "You busted this round"
-                    : me?.stayed || me?.frozen
+                    : me?.stayed
                       ? "You're locked in for this round"
-                      : targetMode
-                        ? "Choose a target above"
-                        : `Waiting for ${state.players[state.currentPlayerIndex]?.name}...`}
+                      : `Waiting for ${state.players[state.currentPlayerIndex]?.name}...`}
                 </div>
               )}
             </div>

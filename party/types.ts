@@ -17,8 +17,6 @@ export interface Player {
   roundScore: number;
   busted: boolean;
   stayed: boolean;
-  frozen: boolean;
-  hasSecondChance: boolean;
   connected: boolean;
 }
 
@@ -29,14 +27,12 @@ export interface GameState {
   players: Player[];
   currentPlayerIndex: number;
   deck: Card[];
+  discard: Card[];
   roundNumber: number;
   hostId: string;
   targetScore: number;
   lastAction: string | null;
   winner: string | null;
-  // For flip three tracking
-  flipThreeRemaining: number;
-  flipThreeTargetId: string | null;
 }
 
 // Messages from client to server
@@ -45,12 +41,10 @@ export type ClientMessage =
   | { type: "start_game" }
   | { type: "hit" }
   | { type: "stay" }
-  | { type: "choose_target"; targetId: string } // for freeze/flip_three targeting
   | { type: "new_round" }
   | { type: "restart" };
 
 // Messages from server to client
 export type ServerMessage =
   | { type: "state"; state: GameState }
-  | { type: "error"; message: string }
-  | { type: "choose_target"; cardType: "freeze" | "flip_three"; playerId: string };
+  | { type: "error"; message: string };
