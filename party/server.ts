@@ -72,7 +72,7 @@ function drawCard(state: GameState): Card {
   return state.deck.pop()!;
 }
 
-function processCard(state: GameState, playerIndex: number, card: Card, fromFlipThree = false): { busted: boolean; flip7: boolean; savedBySecondChance: boolean } {
+function processCard(state: GameState, playerIndex: number, card: Card): { busted: boolean; flip7: boolean; savedBySecondChance: boolean } {
   const player = state.players[playerIndex];
 
   if (card.type === "number") {
@@ -83,10 +83,6 @@ function processCard(state: GameState, playerIndex: number, card: Card, fromFlip
         const scCards = player.cards.filter((c) => c.type === "second_chance");
         player.cards = player.cards.filter((c) => c.type !== "second_chance");
         state.discard.push(card, ...scCards);
-        if (!fromFlipThree) {
-          // Normal draw: saved but you stay
-          player.stayed = true;
-        }
         player.roundScore = calculateRoundScore(player);
         state.lastAction = `${player.name} drew a duplicate ${card.value} but Second Chance saved them!`;
         return { busted: false, flip7: false, savedBySecondChance: true };
@@ -357,7 +353,7 @@ export default class Flip7Server implements Party.Server {
 
     for (let i = 0; i < 3; i++) {
       const card = drawCard(this.state);
-      const result = processCard(this.state, playerIndex, card, true);
+      const result = processCard(this.state, playerIndex, card);
 
       if (result.flip7) {
         for (const p of this.state.players) {

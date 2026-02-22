@@ -217,26 +217,15 @@ export default function Game({ roomId, playerName }: { roomId: string; playerNam
         <div className="space-y-3">
           {/* Player cards grid */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-            {/* Show "you" first */}
-            {me && (
+            {state.players.map((p) => (
               <PlayerCard
-                player={me}
-                isCurrentTurn={state.players[state.currentPlayerIndex]?.id === me.id}
-                isYou={true}
+                key={p.id}
+                player={p}
+                isCurrentTurn={state.players[state.currentPlayerIndex]?.id === p.id}
+                isYou={p.name === playerName}
                 gamePhase={state.phase}
               />
-            )}
-            {state.players
-              .filter((p) => p.name !== playerName)
-              .map((p) => (
-                <PlayerCard
-                  key={p.id}
-                  player={p}
-                  isCurrentTurn={state.players[state.currentPlayerIndex]?.id === p.id}
-                  isYou={false}
-                  gamePhase={state.phase}
-                />
-              ))}
+            ))}
           </div>
 
           {/* Action buttons */}
